@@ -1,8 +1,30 @@
-class Bank {
+const EventEmitter = require('events');
+
+class Bank extends EventEmitter {
   constructor() {
+    super();
     this.contrAgents = [];
+
+    this.on('register', this.register);
+    this.on('add', this.add );
+    this.on('get', this.get );
+    this.on('withdraw', this.withdraw);
+    this.on('send', this.send);
+    this.on('changeLimit', this.changeLimit)
+    this.on('error', this._handleError)
   }
 
+  _handleError(errorType) {
+    try{
+      switch(errorType) {
+        case 'limitError':
+          throw new Error('Limit is not corect!');
+      }
+    } catch(error) {
+      console.error(error.message);
+    }
+  }
+  
   _generateContrAgentId() {
     return Math.random();
   }
@@ -11,6 +33,7 @@ class Bank {
     const contrAgentIndex = this.contrAgents.findIndex(
       (agent) => agent.id === id
     );
+
     try {
       if (contrAgentIndex === -1) {
         throw new Error("This agent not exists");
@@ -22,7 +45,7 @@ class Bank {
     }
   }
 
-  _checkCorrectBalance(balance) {
+  _checkCorrectSum(balance) {
     try {
       if (balance <= 0) {
         throw new Error("Balance can not be 0 or less");
@@ -30,6 +53,19 @@ class Bank {
     } catch (error) {
       console.log(error.message);
     }
+  }
+
+  _checkCorrectBalance(sum, agent) {
+    this._checkCorrectSum(sum);
+     
+    if(agent.limit) {
+     if(!agent.limit(sum, agent.balance, agent.balance - sum)) {
+      this.emit('error', 'limitError');
+      return false;
+     }  
+    }
+    
+    return true;
   }
 
   register(contrAgent) {
@@ -40,7 +76,7 @@ class Bank {
         throw new Error("This agent already exist");
       }
 
-      this._checkCorrectBalance(contrAgent.balance);
+      this._checkCorrectSum(contrAgent.balance);
 
       const id = this._generateContrAgentId();
 
@@ -50,13 +86,14 @@ class Bank {
       });
 
       return id;
+      
     } catch (error) {
       console.log(error.message);
     }
   }
 
   add(id, sum) {
-    this._checkCorrectBalance(sum);
+    this._checkCorrectSum(sum);
     const agentIndex = this._getContrAgentIndex(id);
 
     this.contrAgents[agentIndex].balance += sum;
@@ -67,22 +104,48 @@ class Bank {
     const balance = this.contrAgents[contrAgentIndex].balance;
     return cd(balance);
   }
+
+  withdraw(id, sum) {
+    const agentIndex = this._getContrAgentIndex(id);
+    
+    const corect = this._checkCorrectBalance(sum, this.contrAgents[agentIndex]);
+    if(corect) {
+      this.contrAgents[agentIndex].balance -= sum;
+    }        
+  }
+
+  send (sender, geter, sum) {
+    this.withdraw(sender, sum);
+    this.add(geter, sum);
+  }
+
+  changeLimit( id, cb) {
+    const agentIndex = this._getContrAgentIndex(id);
+    this.contrAgents[agentIndex].limit = cb;
+  }
 }
 
 const myBank = new Bank();
 
-myBank.register({
-  name: "taras",
-  balance: 10,
+const firstAgent = myBank.register({
+  name: 'tatars',
+  balance: 100,
+  limit: (amount) => amount < 20,
 });
 
-console.log(myBank.contrAgents);
+const secondAgent = myBank.register({
+  name: 'tom',
+  balance: 100,
+});
 
-const firstAgent = myBank.contrAgents[0].id;
+myBank.emit('send', firstAgent, secondAgent, 20);
 
-myBank.add(firstAgent, 40);
+myBank.emit('get', firstAgent,
+ (balance) => console.log('balance >>>>>>>', balance)
+ );
 
-console.log(myBank.contrAgents);
-
-myBank.get(firstAgent, (balance) => console.log('contrAgentIndex balance >>>>>>>', balance));
-
+myBank.emit('changeLimit', firstAgent, (amount) => amount < 30);
+myBank.emit('send', firstAgent, secondAgent, 20);
+myBank.emit('get', firstAgent,
+ (balance) => console.log('balance >>>>>>>', balance)
+ );
